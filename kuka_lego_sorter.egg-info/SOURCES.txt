@@ -8,3 +8,4 @@ kuka_lego_sorter.egg-info/requires.txt
 kuka_lego_sorter.egg-info/top_level.txt
 kuka_lego_sorter/envs/__init__.py
 kuka_lego_sorter/envs/kuka_lego_sorter_env.py
+kuka_lego_sorter/resources/__init__.py
