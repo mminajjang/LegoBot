@@ -7,7 +7,7 @@ import cv2
 env = gym.make("KukaLegoSorter-v0", renders=False)
 
 
-frame = env.reset()
+frame, _ = env.reset()
 frames = []
 frames.append(frame)
 
@@ -25,7 +25,7 @@ cnt = len(frames)
 idx = 0
 while idx<cnt:
     cv2.imshow('vid',frames[idx])
-    if cv2.waitKey(100) == 27:
+    if cv2.waitKey(100) == 27: # press 'esc' to exit vid display
         break
     idx += 1
     if idx >= cnt:

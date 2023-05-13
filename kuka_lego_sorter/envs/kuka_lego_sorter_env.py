@@ -101,7 +101,7 @@ class KukaLegoEnv(gym.Env):
         image = np.reshape(rgb, (self._height, self._width, 4))     
         segment = np.reshape(img_arr[3], (self._height, self._width, 1))   #sement[h,w] = object ID + (linkIndes+1) << 24
 
-        return image # np.concatenate((image, segment), axis=2)  # shape (height, width, 4)
+        return image[:, :, :3] # np.concatenate((image, segment), axis=2)  # shape (height, width, 4)
 
     def step(self, action):
         
