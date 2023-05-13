@@ -1,0 +1,1 @@
+from kuka_lego_sorter.envs.kuka_lego_sorter_env import KukaLegoEnv
