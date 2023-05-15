@@ -1,5 +1,5 @@
 <?xml version="1.0"?>
-<robot name="lego_1_3">
+<robot name="man">
   <link name="base">
    <contact>
       <lateral_friction value="1.0"/>
@@ -15,15 +15,15 @@
     </inertial>
     <visual>
       <geometry>
-        <mesh filename="OBJ/onebythree.obj" scale="1 1 1"/>
+        <mesh filename="OBJ/man.obj" scale="1 1 1"/>
       </geometry>
       <origin rpy="0 0 0" xyz="0 0 0" />
-      <material name="purple"/>
+      <material name="green"/>
     </visual>
     <collision>
       <origin rpy="0 0 0" xyz="0 0 0"/>
       <geometry>
-         <mesh filename="OBJ/onebythree.obj" scale="1 1 1"/>
+         <mesh filename="OBJ/man.obj" scale="1 1 1"/>
       </geometry>
     </collision>
   </link>
