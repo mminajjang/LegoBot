@@ -35,11 +35,12 @@ class KukaLegoEnv(gym.Env):
                 isDiscrete=False, 
                 isTarget=False,
                 actionRepeat=50,
-                maxSteps=20,
+                maxSteps=50,
                 width=128,
                 height=128,
                 numOfObjs = 3,
-                detectingColour = 'red'):
+                detectingColour = 'red',
+                imageObs=1):
 
         self._urdfRoot = urdfRoot
         self._objRoot = objRoot
@@ -51,30 +52,34 @@ class KukaLegoEnv(gym.Env):
         self._timeStep = 1. / 240.
         self._envStepCounter = 0
         self.terminated = 0
-        self._numOfobjs = numOfObjs
         self._cam_info = {'dist': 1.3, 'yaw': 180, 'pitch':-30}
         self._width = width
         self._height = height
         self._grasped_colour = None
-        colourList = {'red' : 0, 'blue' : 1, 'green' : 2}
+        colourList = {'red' : 0, 'green' : 1, 'blue' : 2}
         self._detecting_colour = colourList[detectingColour]
+        self._imageObs = imageObs
+        self._numOfobjs = numOfObjs
 
         self._p = p
         if self._renders:
-            cid = p.connect(p.SHARED_MEMORY)
-            if cid < 0 :
-                cid = p.connect(p.GUI)
+            self.cid = p.connect(p.SHARED_MEMORY)
+            if self.cid < 0 :
+                self.cid = p.connect(p.GUI)
             p.resetDebugVisualizerCamera(self._cam_info['dist'], self._cam_info['yaw'], self._cam_info['pitch'], [0.52, -0.2, -0.33])
 
         else:
-            cid = p.connect(p.DIRECT)
+            self.cid = p.connect(p.DIRECT)
         self.seed()
         
         if self._isDiscrete:
-            self.action_space = gym.spaces.Discrete(7) # +x, -x, +y, -y, -z, +-endEffectorAngle,
+            self.action_space = gym.spaces.Discrete(6) # +x, -x, +y, -y, -z, +-endEffectorAngle,
         else:
             self.action_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(5, )) # dx, dy, dz, R, P, Y, finger
-        self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self._height, self._width, 4), dtype=np.uint8) # (h,w) * [r,g,b, depth]
+        if self._imageObs:
+            self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self._height, self._width, 3), dtype=np.uint8) # (h,w) * [r,g,b, depth]
+        else:
+            self.observation_space = gym.spaces.Box(low=-np.inf, high=np.inf, shape=(4, ), dtype=np.float32) # (h,w) * [r,g,b, depth]
 
         self._kuka = None
         self._objectIDs = None
@@ -84,10 +89,10 @@ class KukaLegoEnv(gym.Env):
         self._end_effector_orn = None
 
     def reset(self):
-        look = [0.23, 0.2, 0.54]
-        distance = 1
-        pitch = -56
-        yaw = 245
+        look = [0.53, 0, 0.15] # [0.23, 0.2, 0.54]
+        distance = 1.5
+        pitch =-50 # -56
+        yaw = 90# 245
         roll = 0
         self._view_matrix = p.computeViewMatrixFromYawPitchRoll(look, distance, yaw, pitch, roll, 2)
         fov = 20.
@@ -109,7 +114,7 @@ class KukaLegoEnv(gym.Env):
         self._attempted_grasp = False
         p.stepSimulation()
         self._objectIDs, self._target_obj_IDs = self._get_objectsID()
-        observation = self._get_observation()
+        observation = self.get_observation()
         info = {'grasped colour': self._grasped_colour}
 
         return observation, info
@@ -117,7 +122,7 @@ class KukaLegoEnv(gym.Env):
     def _get_objectsID(self):
         # IDs = getObject(self._p, self._numOfobjs)
         urdf_name = ["lego_1_1_", "lego_1_2_", "lego_1_3_", "lego_1_4_", "lego_2_2_"]# "man_", "sign_", "bar_", "corn_"]
-        urdf_colour = ["red", "blue", "green"]
+        urdf_colour = ["red", "green", "blue"]
         IDs = []
         target_obj_IDs =[]
         for i in range(self._numOfobjs):
@@ -126,7 +131,7 @@ class KukaLegoEnv(gym.Env):
             angle = np.pi / 2 + 0.3 * np.pi * random.random()
             orn = p.getQuaternionFromEuler([0, 0, angle])
             nameInd = random.randrange(0,len(urdf_name))
-            colourInd = random.randrange(0,len(urdf_colour))
+            colourInd = i%3#random.randrange(0,len(urdf_colour))
             f_name = urdf_name[nameInd] + urdf_colour[colourInd] + ".urdf"
             urdf_path = os.path.join(self._objRoot, f_name)
             uid = p.loadURDF(urdf_path, [xpos, ypos, .15], [orn[0], orn[1], orn[2], orn[3]])
@@ -137,32 +142,59 @@ class KukaLegoEnv(gym.Env):
                 p.stepSimulation()
         return IDs, target_obj_IDs
 
-    def _get_observation(self):
+    def get_observation(self):
         '''return image '''
-        img_arr = p.getCameraImage(width=self._width, 
-                                    height=self._height,
-                                    viewMatrix=self._view_matrix,
-                                    projectionMatrix=self._proj_matrix)  #-> return [width, height, rgbPixels(size=w,h,4), depth(size=w,h), segmentmask(size = w,h)]
-        rgb = img_arr[2] # rbg[h, w] = [r, g, b, a]
-        image = np.reshape(rgb, (self._height, self._width, 4)) 
-        mask = np.reshape(img_arr[4], (self._height, self._width, 1))
-        for row in range(self._height):
-            for col in range(self._width):
-                image[row,col,3] = 0
-                for target in (self._target_obj_IDs):
-                    if mask[row, col, 0] == target:
-                        image[row, col, 3] = 255
-        return image # np.concatenate((image, segment), axis=2)  # shape (height, width, 4
+        if self._imageObs == 1:
+            img_arr = p.getCameraImage(width=self._width, 
+                                        height=self._height,
+                                        viewMatrix=self._view_matrix,
+                                        projectionMatrix=self._proj_matrix)  #-> return [width, height, rgbPixels(size=w,h,4), depth(size=w,h), segmentmask(size = w,h)]
+            rgb = img_arr[2] # rbg[h, w] = [r, g, b, a]
+            image = np.reshape(rgb, (self._height, self._width, 4)) 
+            mask = np.reshape(img_arr[4], (self._height, self._width, 1))
+            for row in range(self._height):
+                for col in range(self._width):
+                    image[row,col, 3] = 0
+                    for target in (self._target_obj_IDs):
+                        if mask[row, col, 0] == target:
+                            image[row, col, 3] = 255
+
+            for row in range(self._height):
+                for col in range(self._width):
+                    if image[row, col, 3] == 0:
+                        image[row, col, :] = 0
+            return image[:, :, :3] # np.concatenate((image, segment), axis=2)  # shape (height, width, 4
+        else:
+            if len(self._target_obj_IDs) == 0:
+                
+                return np.array([0, 0, 0, 0])
+            else:
+                minDis = 10000; closestTarget = -10
+                gripperState = self._kuka.getObservation()
+                for target in self._target_obj_IDs:
+                    objPos, _ = p.getBasePositionAndOrientation(target)
+                    dis = np.sqrt( (objPos[0]-gripperState[0])**2 +  (objPos[1]-gripperState[1])**2 + (objPos[2]-gripperState[2])**2 )
+                    if minDis > dis:
+                        minDis = dis
+                        closestTarget = target
+                objPos, objOrn = p.getBasePositionAndOrientation(closestTarget)
+                gripperPos = [gripperState[0], gripperState[1], gripperState[2]]
+                gripperOrn = p.getQuaternionFromEuler([gripperState[3], gripperState[4], gripperState[5]])
+                invGripperPos, invGripperOrn = p.invertTransform(gripperPos, gripperOrn)
+                obsPos, obsOrn = p.multiplyTransforms(invGripperPos, invGripperOrn, objPos, objOrn)
+                
+                return np.array([obsPos[0], obsPos[1], obsPos[2], p.getEulerFromQuaternion(obsOrn)[2]])
+
 
     def step(self, action):
         
         dv = 0.05
         # a = 0.05*np.pi/180
         if self._isDiscrete:
-            dx = [0, dv, -dv,  0,   0,   0, 0,  0][action]
-            dy = [0,  0,   0, dv, -dv,   0, 0,  0][action]
-            dz = [0,  0,   0,  0,   0, -dv, 0,  0][action]
-            da = [0,  0,   0,  0,   0,   0, dv, -dv][action]
+            dx = [0, dv, -dv,  0,   0,  0,   0][action]
+            dy = [0,  0,   0, dv, -dv,  0,   0][action]
+            dz = -dv # [0,  0,   0,  0,   0, -dv, 0,  0][action]
+            da = [0,  0,   0,  0,   0, dv, -dv][action]
             f = 0.29
         else:
             if self._isTarget:
@@ -216,7 +248,7 @@ class KukaLegoEnv(gym.Env):
                 if self._termination():
                     break
 
-        observation = self._get_observation()
+        observation = self.get_observation()
         reward = self._reward()
         done = self._termination()
         info = {'grasped colour': self._grasped_colour}
@@ -258,15 +290,15 @@ class KukaLegoEnv(gym.Env):
                     p.removeBody(target)
                     self._target_obj_IDs.remove(target)
             self._attempted_grasp = False
-        kukaState = self._kuka.getObservation()
-        self._end_effector_pos = [kukaState[0], kukaState[1], kukaState[2]]
-        dis = 0
-        for target in self._target_obj_IDs:
-            objPos, _ = p.getBasePositionAndOrientation(target)
-            dis +=  np.sqrt( (objPos[0] - self._end_effector_pos[0])**2 + 
-                        (objPos[1] - self._end_effector_pos[1])**2 +
-                        (objPos[2] - self._end_effector_pos[2])**2 )
-        reward -= dis
+        # kukaState = self._kuka.getObservation()
+        # self._end_effector_pos = [kukaState[0], kukaState[1], kukaState[2]]
+        # dis = 0
+        # for target in self._target_obj_IDs:
+        #     objPos, _ = p.getBasePositionAndOrientation(target)
+        #     dis +=  np.sqrt( (objPos[0] - self._end_effector_pos[0])**2 + 
+        #                 (objPos[1] - self._end_effector_pos[1])**2 +
+        #                 (objPos[2] - self._end_effector_pos[2])**2 )
+        # reward -= dis
 
         if len(self._target_obj_IDs) == 0: 
             reward = 100
