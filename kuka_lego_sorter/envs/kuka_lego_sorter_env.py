@@ -81,8 +81,8 @@ class KukaLegoEnv(gym.Env):
         if self._observeImage:
             self.observation_space = gym.spaces.Box(low=0, high=255, shape=(self._height, self._width, 3), dtype=np.uint8)  # (h,w) * [r,g,b, depth]
         else:
-            self.observation_space = gym.spaces.Tuple((gym.spaces.Box(low=-5, high=5, shape=(3, ), dtype=np.float32),     
-                                                        gym.spaces.Box(low=-np.pi, high=np.pi, shape=(3, ), dtype=np.float32))) # # number of left target bricks # position     orientation ( end-effector pos related the closest target brick )
+            self.observation_space = (gym.spaces.Box(low=-5., high=5., shape=(6, ), dtype=np.float32))     
+                                                        # gym.spaces.Box(low=-np.pi, high=np.pi, shape=(3, ), dtype=np.float32))) # # number of left target bricks # position     orientation ( end-effector pos related the closest target brick )
 
         ''' Kuka environment '''
         self._kuka = None
@@ -216,7 +216,7 @@ class KukaLegoEnv(gym.Env):
                                         height=self._height,
                                         viewMatrix=self._view_matrix,
                                         projectionMatrix=self._proj_matrix)
-                self.vid.append(np.reshape(img[2], (self._height, self._width, 4))[:,:,:3])
+                self.vid.append(np.reshape(img[2], (self._height, self._width, 4)))
         for t in range(400):
             action = [0, 0, 0.00085, 0, fingerAngle]
             self._kuka.applyAction(action)
@@ -231,7 +231,7 @@ class KukaLegoEnv(gym.Env):
                                             height=self._height,
                                             viewMatrix=self._view_matrix,
                                             projectionMatrix=self._proj_matrix)
-                self.vid.append(np.reshape(img[2], (self._height, self._width, 4))[:,:,:3])
+                self.vid.append(np.reshape(img[2], (self._height, self._width, 4)))
         ''' check if grasped target '''
         self._gripper_state = self._kuka.getObservation()
         gripperPos = self._gripper_state[:3]
@@ -358,23 +358,26 @@ class KukaLegoEnv(gym.Env):
                                         height=self._height,
                                         viewMatrix=self._view_matrix,
                                         projectionMatrix=self._proj_matrix)
-            self.vid.append(np.reshape(img[2], (self._height, self._width, 4))[:,:,:3])
+            self.vid.append(np.reshape(img[2], (self._height, self._width, 4)))
         
             if self._target_number == 0:
-                return [0, 0, 0], [0, 0, 0]
+                return [0, 0, 0, 0, 0, 0]
 
             self._gripper_state = self._kuka.getObservation()
             self._closest_target_ID = self._find_closest_target(self._gripper_state[:3])
 
             if self._closest_target_ID is None:     # removed target, return NULL
-                return [0, 0, 0], [0, 0, 0]
+                return [0, 0, 0, 0, 0, 0]
             else:
                 objPos, objOrn = p.getBasePositionAndOrientation(self._closest_target_ID)
                 gripperPos, gripperOrn = self._gripper_state[:3], p.getQuaternionFromEuler(self._gripper_state[3:])
                 invObjPos, invObjOrn = p.invertTransform(objPos, objOrn)
                 observedPos, observedOrn = p.multiplyTransforms(invObjPos, invObjOrn, gripperPos, gripperOrn)
                 observedOrnEuler = p.getEulerFromQuaternion(observedOrn)
-                return observedPos, observedOrnEuler
+                observed = []
+                observed.extend(list(observedPos))
+                observed.extend(list(observedOrnEuler))
+                return observed
 
 
     def _get_objectsIDs(self):
