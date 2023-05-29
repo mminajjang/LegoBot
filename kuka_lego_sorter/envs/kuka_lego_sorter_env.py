@@ -216,7 +216,7 @@ class KukaLegoEnv(gym.Env):
                                         height=self._height,
                                         viewMatrix=self._view_matrix,
                                         projectionMatrix=self._proj_matrix)
-                self.vid.append(np.reshape(img[2], (self._height, self._width, 4)))
+                self.vid.append(np.reshape(img[2], (self._height, self._width, 4))[:,:,:3])
         for t in range(400):
             action = [0, 0, 0.00085, 0, fingerAngle]
             self._kuka.applyAction(action)
@@ -231,7 +231,7 @@ class KukaLegoEnv(gym.Env):
                                             height=self._height,
                                             viewMatrix=self._view_matrix,
                                             projectionMatrix=self._proj_matrix)
-                self.vid.append(np.reshape(img[2], (self._height, self._width, 4)))
+                self.vid.append(np.reshape(img[2], (self._height, self._width, 4))[:,:,:3])
         ''' check if grasped target '''
         self._gripper_state = self._kuka.getObservation()
         gripperPos = self._gripper_state[:3]
@@ -358,7 +358,7 @@ class KukaLegoEnv(gym.Env):
                                         height=self._height,
                                         viewMatrix=self._view_matrix,
                                         projectionMatrix=self._proj_matrix)
-            self.vid.append(np.reshape(img[2], (self._height, self._width, 4)))
+            self.vid.append(np.reshape(img[2], (self._height, self._width, 4))[:,:,:3])
         
             if self._target_number == 0:
                 return [0, 0, 0], [0, 0, 0]
