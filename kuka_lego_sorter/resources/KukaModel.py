@@ -17,12 +17,12 @@ class Kuka:
     self.timeStep = timeStep
     self.maxVelocity = .35
     self.maxForce = 200.
-    self.fingerAForce = 20
-    self.fingerBForce = 25
+    self.fingerAForce = 2
+    self.fingerBForce = 2.5
     self.fingerTipForce = 2
     self.useInverseKinematics = 1
     self.useSimulation = 1
-    self.useNullSpace = 0
+    self.useNullSpace = 1
     self.useOrientation = 1
     self.kukaEndEffectorIndex = 6
     self.kukaGripperIndex = 7
@@ -39,6 +39,7 @@ class Kuka:
         0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001, 0.00001,
         0.00001, 0.00001, 0.00001, 0.00001
     ]
+    # self.flag = True
     self.reset()
 
   def reset(self):
@@ -66,7 +67,11 @@ class Kuka:
     observation = self.getObservation()
     self.endEffectorPos = [observation[0], observation[1], observation[2]]
     self.endEffectorOrn = [observation[3], observation[4], observation[5]]
-    self._fingerAngle = 0.29
+    # if self.flag:
+    #   print(f"""
+    #           gripper pos :  {self.endEffectorPos}
+    #           gripper orientation : {self.endEffectorOrn}""")
+    self.fingerAngle = 0.29
     self._attempted_grasp = 0 
 
     self.motorNames = []
@@ -80,14 +85,6 @@ class Kuka:
         #print(jointInfo[1])
         self.motorNames.append(str(jointInfo[1]))
         self.motorIndices.append(i)
-
-  def getActionDimension(self):
-    if (self.useInverseKinematics):
-      return len(self.motorIndices)
-    return 6  #position x,y,z and roll/pitch/yaw euler angles of end effector
-
-  def getObservationDimension(self):
-    return len(self.getObservation())
 
   def getObservation(self):
     observation = []
@@ -103,35 +100,25 @@ class Kuka:
   
   def _normalize(self, angle):
     '''
-    return value between -180 and 180
+    return value between -PI and PI
     '''
-    if angle > np.pi:
-      angle -= 2*np.pi
-    
-    if angle <= -np.pi:
-      angle += 2*np.pi
-
+    if angle < -np.pi or angle > np.pi:
+      angle = np.arcsin(np.sin(angle))
     return angle
 
-  def applyAction(self, motorCommands):
+  def get_fingerAngle(self):
+    self.fingerAngle = (abs(p.getJointState(self.kukaUid, 8)[0]) + abs(p.getJointState(self.kukaUid, 11)[0]))/2
+    return self.fingerAngle
 
-    #print ("self.numJoints")
-    #print (self.numJoints)
+  
+  def applyAction(self, motorCommands):
     if (self.useInverseKinematics):
 
       dx = motorCommands[0]
       dy = motorCommands[1]
       dz = motorCommands[2]
       da = motorCommands[3]
-      self._fingerAngle = motorCommands[4]
-
-      # if f == 1:  # during grasping, don't move x, y and a but allow positive z if completely grasping, so picking it up
-      #   dx, dy, dz, da = 0, 0, dz, 0
-      #   self._fingerAngle -= 0.02
-      #   if self._fingerAngle < 0:
-      #     self._fingerAngle = 0
-      # else:
-      #   self._fingerAngle = 0.29
+      self.fingerAngle = motorCommands[4]
 
       # kukaState = self.getObservation()
       # self.endEffectorPos = [kukaState[0], kukaState[1], kukaState[2]]
@@ -151,20 +138,21 @@ class Kuka:
       if (self.endEffectorPos[2] < 0.23):
         self.endEffectorPos[2] = 0.23
 
-      self.endEffectorOrn[0] = 0#self._normalize(R + observation[3])
-      self.endEffectorOrn[1] = -np.pi #self._normalize(P + observation[4])
-      self.endEffectorOrn[2] = self.endEffectorOrn[2] + da
+      self.endEffectorOrn[0] = np.pi#self._normalize(R + observation[3])
+      self.endEffectorOrn[1] = 0 #self._normalize(P + observation[4])
+      self.endEffectorOrn[2] = self._normalize(self.endEffectorOrn[2] + da)
       
       pos = self.endEffectorPos
       orn = p.getQuaternionFromEuler([self.endEffectorOrn[0], self.endEffectorOrn[1], self.endEffectorOrn[2]])
-    
+
+      ''' get joint poses '''
       if (self.useNullSpace == 1):
         if (self.useOrientation == 1):
-          jointPoses = p.calculateInverseKinematics(self.kukaUid, self.kukaEndEffectorIndex, pos,
+          jointPoses = p.calculateInverseKinematics(self.kukaUid, self.kukaGripperIndex, pos,
                                                     orn, self.ll, self.ul, self.jr, self.rp)
         else:
           jointPoses = p.calculateInverseKinematics(self.kukaUid,
-                                                    self.kukaEndEffectorIndex,
+                                                    self.kukaGripperIndex,
                                                     pos,
                                                     lowerLimits=self.ll,
                                                     upperLimits=self.ul,
@@ -178,10 +166,11 @@ class Kuka:
                                                     orn,
                                                     jointDamping=self.jd)
         else:
-          jointPoses = p.calculateInverseKinematics(self.kukaUid, self.kukaEndEffectorIndex, pos)
+          jointPoses = p.calculateInverseKinematics(self.kukaUid, self.kukaGripperIndex, pos)
 
+      ''' set joint poses [ARM] '''
       if (self.useSimulation):
-        for i in range(self.kukaGripperIndex):
+        for i in range(self.kukaGripperIndex+1):
           p.setJointMotorControl2(bodyUniqueId=self.kukaUid,
                                   jointIndex=i,
                                   controlMode=p.POSITION_CONTROL,
@@ -196,24 +185,23 @@ class Kuka:
         #reset the joint state (ignoring all dynamics, not recommended to use during simulation)
         for i in range(self.numJoints):
           p.resetJointState(self.kukaUid, i, jointPoses[i])
-      #fingers
-      if self._fingerAngle >= 0.29:
-        #fingers
-        p.setJointMotorControl2(self.kukaUid,
-                              7,
-                              p.POSITION_CONTROL,
-                              targetPosition=self.endEffectorOrn[2],
-                              force=self.maxForce)
+      ''' set joint poses [GRIPPER] '''
+      if self.fingerAngle >= 0.28:
+        # p.setJointMotorControl2(self.kukaUid,
+        #                         7,
+        #                         p.POSITION_CONTROL,
+        #                         targetPosition=jointPoses[7], #self.endEffectorOrn[2],#
+        #                         force=self.maxForce)
         p.setJointMotorControl2(self.kukaUid,
                                 8,
                                 p.POSITION_CONTROL,
-                                targetPosition=-self._fingerAngle,
-                                force=self.fingerAForce)
+                                targetPosition=-self.fingerAngle,
+                                force=self.maxForce)
         p.setJointMotorControl2(self.kukaUid,
                                 11,
                                 p.POSITION_CONTROL,
-                                targetPosition=self._fingerAngle,
-                                force=self.fingerBForce)
+                                targetPosition=self.fingerAngle,
+                                force=self.maxForce)
 
         p.setJointMotorControl2(self.kukaUid,
                                 10,
@@ -226,20 +214,20 @@ class Kuka:
                                 targetPosition=0,
                                 force=self.fingerTipForce)
       else:
-        p.setJointMotorControl2(self.kukaUid,
-                              7,
-                              p.POSITION_CONTROL,
-                              targetPosition=self.endEffectorOrn[2],
-                              force=self.maxForce)
+        # p.setJointMotorControl2(self.kukaUid,
+        #                         7,
+        #                         p.POSITION_CONTROL,
+        #                         targetPosition=jointPoses[7], #self.endEffectorOrn[2],#
+        #                         force=self.maxForce)
         p.setJointMotorControl2(self.kukaUid,
                                 8,
                                 p.POSITION_CONTROL,
-                                targetPosition=-self._fingerAngle,
+                                targetPosition=-self.fingerAngle,
                                 force=self.maxForce)
         p.setJointMotorControl2(self.kukaUid,
                                 11,
                                 p.POSITION_CONTROL,
-                                targetPosition=self._fingerAngle,
+                                targetPosition=self.fingerAngle,
                                 force=self.maxForce)
 
         p.setJointMotorControl2(self.kukaUid,
