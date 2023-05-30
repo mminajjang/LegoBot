@@ -286,13 +286,13 @@ class KukaLegoEnv(gym.Env):
         
         else:
             
-            # self._gripper_state = self._kuka.getObservation()
-            # self._closest_target_ID = self._find_closest_target(self._gripper_state[:3])
-            # objPos, _ = p.getBasePositionAndOrientation(self._closest_target_ID)
+            self._gripper_state = self._kuka.getObservation()
+            self._closest_target_ID = self._find_closest_target(self._gripper_state[:3])
+            objPos, _ = p.getBasePositionAndOrientation(self._closest_target_ID)
 
             if self._attempted_grasp == self._prev_attempted_grasp:
             #     ''' no attempted'''
-                return -1.  # * np.exp(np.linalg.norm(np.array(self._gripper_state[:3]) - np.array(objPos)))
+                return - np.exp(np.linalg.norm(np.array(self._gripper_state[:3]) - np.array(objPos)))
             else:
             #     print(f"""
             #     target_number : {self._target_number}
